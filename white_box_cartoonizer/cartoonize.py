@@ -8,6 +8,7 @@ import uuid
 import time
 import subprocess
 import sys
+import tempfile
 
 import cv2
 import numpy as np
@@ -17,8 +18,8 @@ try:
 except ImportError:
     import tensorflow as tf
 
-import network
-import guided_filter
+from . import network
+from . import guided_filter
 
 class WB_Cartoonize:
     def __init__(self, weights_dir, gpu):
@@ -85,14 +86,15 @@ class WB_Cartoonize:
         
         return output
     
-    def process_video(self, fname, frame_rate):
+    def process_video(self, fname, frame_rate, final_name=None):
         ## Capture video using opencv
         cap = cv2.VideoCapture(fname)
-
         target_size = (int(cap.get(3)),int(cap.get(4)))
-        output_fname = os.path.abspath('{}/{}-{}.mp4'.format(fname.replace(os.path.basename(fname), ''),str(uuid.uuid4())[:7],os.path.basename(fname).split('.')[0]))
 
-        out = skvideo.io.FFmpegWriter(output_fname, inputdict={'-r':frame_rate}, outputdict={'-r':frame_rate})
+        if final_name is None:
+            final_name = '{}final_{}'.format(fname.replace(os.path.basename(fname), ''), os.path.basename(fname))
+
+        out = skvideo.io.FFmpegWriter(final_name, inputdict={'-r':frame_rate}, outputdict={'-r':frame_rate,'-pix_fmt':'yuv420p'})
 
         while True:
             ret, frame = cap.read()
@@ -103,23 +105,15 @@ class WB_Cartoonize:
                 
                 frame = self.infer(frame)
                 
-                frame = cv2.resize(frame, target_size)
-                
+                frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_CUBIC)
+
                 out.writeFrame(frame)
                 
             else:
                 break
         cap.release()
         out.close()
-        
-        final_name = '{}final_{}'.format(fname.replace(os.path.basename(fname), ''), os.path.basename(output_fname))
-
-        p = subprocess.Popen(['ffmpeg','-i','{}'.format(output_fname), "-pix_fmt", "yuv420p", final_name])
-        p.communicate()
-        p.wait()
-
-        os.system("rm "+output_fname)
-
+   
         return final_name
 
 if __name__ == '__main__':
